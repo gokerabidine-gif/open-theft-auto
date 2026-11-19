@@ -35,10 +35,10 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Godot 4.7
+      - name: Set up Godot 4.7.0
         uses: chickensoft-games/setup-godot@v2
         with:
-          version: 4.7
+          version: 4.7.0
           use-dotnet: false
           include-templates: true
           cache: true
