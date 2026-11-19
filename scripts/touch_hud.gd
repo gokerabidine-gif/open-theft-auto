@@ -1,46 +1,36 @@
 class_name TouchHUD
 extends CanvasLayer
-## On-screen touch controls for mobile builds. Instantiated by game.gd only when
-## `OS.has_feature("mobile")` is true, so desktop play is completely untouched.
-##
-## Each frame the game polls `stick`, `sprint_held`, `fire_held`, and
-## `consume_look_rel()`. Tap buttons emit `action(name)` — game.gd routes the
-## name back into the existing `_handle_action` path so the rest of the game
-## doesn't know touch exists.
+## Landscape-first mobile controls: fixed left movement stick, right-side actions,
+## and a dedicated right-half camera-look zone.
 
-signal action(name: StringName)   # "interact" (E), "suit" (F), "summon" (V)
+signal action(name: StringName)
 
-# --- State the game reads every frame. -------------------------------------
-var stick: Vector2 = Vector2.ZERO       # move axes [-1,1]; +y = forward
-var look_rel: Vector2 = Vector2.ZERO    # consumed by the game each frame
-var sprint_held: bool = false           # true when the stick is fully pushed
-var fire_held: bool = false             # while a finger is on the FIRE button
+var stick: Vector2 = Vector2.ZERO
+var look_rel: Vector2 = Vector2.ZERO
+var sprint_held: bool = false
+var fire_held: bool = false
 
-# --- Layout / feel ---------------------------------------------------------
-const STICK_RADIUS := 110.0             # max knob travel from origin (pixels)
-const LOOK_SENS := 0.55                 # touch-drag → mouse-rel scale
-const BUTTON_RADIUS := 60.0             # action buttons (E/F/V)
-const FIRE_RADIUS := 84.0               # primary fire button
-const SPRINT_THRESHOLD := 0.85          # stick magnitude that triggers sprint
+const LOOK_SENS := 0.48
+const SPRINT_THRESHOLD := 0.88
 
-# --- Touch tracking --------------------------------------------------------
 var _stick_touch := -1
-var _stick_origin: Vector2 = Vector2.ZERO
+var _stick_base: Vector2 = Vector2.ZERO
 var _stick_knob: Vector2 = Vector2.ZERO
 var _look_touch := -1
 var _fire_touch := -1
 
-# --- Button hit-centres (recomputed in _resize on viewport change) ----------
+var _stick_radius := 92.0
+var _button_radius := 52.0
+var _fire_radius := 70.0
+
 var _btn_fire: Vector2 = Vector2.ZERO
 var _btn_e: Vector2 = Vector2.ZERO
 var _btn_f: Vector2 = Vector2.ZERO
 var _btn_v: Vector2 = Vector2.ZERO
 
-var _pad: Control                       # full-viewport overlay that draws
+var _pad: Control
 
 
-## Inner Control used purely for drawing. Mouse filter is IGNORE so it never
-## blocks input — _input on the CanvasLayer handles screen-touch events.
 class TouchPad extends Control:
 	var hud
 	func _draw() -> void:
@@ -52,8 +42,7 @@ func _ready() -> void:
 	layer = 30
 	_pad = TouchPad.new()
 	_pad.hud = self
-	_pad.anchor_right = 1.0
-	_pad.anchor_bottom = 1.0
+	_pad.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_pad)
 	get_viewport().size_changed.connect(_resize)
@@ -61,16 +50,12 @@ func _ready() -> void:
 
 
 func _process(_dt: float) -> void:
-	# Hide (and stop swallowing touches) while a terminal/phone overlay is up,
-	# so the buttons in those screens get the taps instead.
 	var want := GameState.started and not GameState.paused
 	if visible and not want:
-		_clear_touches()   # a finger-lift while hidden would never reach _input
+		_clear_touches()
 	visible = want
 
 
-## Forget every live touch — otherwise a hold that started before the HUD hid
-## (FIRE, the move stick) latches on until that control is pressed again.
 func _clear_touches() -> void:
 	_stick_touch = -1
 	_look_touch = -1
@@ -79,30 +64,35 @@ func _clear_touches() -> void:
 	look_rel = Vector2.ZERO
 	sprint_held = false
 	fire_held = false
+	_stick_knob = _stick_base
 	_pad.queue_redraw()
 
 
 func _resize() -> void:
 	var sz := get_viewport().get_visible_rect().size
-	_btn_fire = Vector2(sz.x - 150.0, sz.y - 150.0)
-	_btn_e    = Vector2(sz.x - 150.0, sz.y - 360.0)
-	_btn_f    = Vector2(sz.x - 320.0, sz.y - 300.0)
-	_btn_v    = Vector2(sz.x - 320.0, sz.y - 460.0)
+	_stick_radius = clampf(sz.y * 0.105, 68.0, 108.0)
+	_button_radius = clampf(sz.y * 0.060, 38.0, 58.0)
+	_fire_radius = clampf(sz.y * 0.082, 48.0, 76.0)
+
+	# PUBG-style layout: movement bottom-left, combat/actions bottom-right.
+	_stick_base = Vector2(sz.x * 0.15, sz.y * 0.78)
+	_btn_fire = Vector2(sz.x * 0.91, sz.y * 0.77)
+	_btn_e = Vector2(sz.x * 0.77, sz.y * 0.88)
+	_btn_f = Vector2(sz.x * 0.79, sz.y * 0.61)
+	_btn_v = Vector2(sz.x * 0.92, sz.y * 0.56)
+	if _stick_touch < 0:
+		_stick_knob = _stick_base
 	_pad.queue_redraw()
 
 
-## Returns the accumulated look delta and resets it. Called by the game once
-## per frame in place of mouse-relative motion.
 func consume_look_rel() -> Vector2:
 	var r := look_rel
 	look_rel = Vector2.ZERO
 	return r
 
 
-# ---------------- Input dispatch -------------------------------------------
 func _input(event: InputEvent) -> void:
 	if not visible:
-		# Still honour finger-lifts so no touch stays latched across a hide.
 		if event is InputEventScreenTouch and not event.pressed:
 			_release(event.index)
 		return
@@ -116,28 +106,28 @@ func _input(event: InputEvent) -> void:
 
 
 func _press(idx: int, pos: Vector2) -> void:
-	# Buttons first — a touch on a button isn't move/look.
-	if pos.distance_to(_btn_fire) < FIRE_RADIUS:
+	if pos.distance_to(_btn_fire) <= _fire_radius:
 		fire_held = true
 		_fire_touch = idx
 		_pad.queue_redraw()
 		return
-	if pos.distance_to(_btn_e) < BUTTON_RADIUS:
-		action.emit(&"interact"); return
-	if pos.distance_to(_btn_f) < BUTTON_RADIUS:
-		action.emit(&"suit"); return
-	if pos.distance_to(_btn_v) < BUTTON_RADIUS:
-		action.emit(&"summon"); return
-	# Left half of the screen → movement joystick spawns at the touch point.
-	var sz := get_viewport().get_visible_rect().size
-	if pos.x < sz.x * 0.5 and _stick_touch < 0:
-		_stick_touch = idx
-		_stick_origin = pos
-		_stick_knob = pos
-		_pad.queue_redraw()
+	if pos.distance_to(_btn_e) <= _button_radius:
+		action.emit(&"interact")
 		return
-	# Otherwise it's a camera-look drag.
-	if _look_touch < 0:
+	if pos.distance_to(_btn_f) <= _button_radius:
+		action.emit(&"suit")
+		return
+	if pos.distance_to(_btn_v) <= _button_radius:
+		action.emit(&"summon")
+		return
+
+	var sz := get_viewport().get_visible_rect().size
+	# The left lower zone is reserved for movement; the right half controls camera.
+	if pos.x < sz.x * 0.42 and pos.y > sz.y * 0.38 and _stick_touch < 0:
+		_stick_touch = idx
+		_update_stick(pos)
+		return
+	if pos.x >= sz.x * 0.42 and _look_touch < 0:
 		_look_touch = idx
 
 
@@ -150,51 +140,62 @@ func _release(idx: int) -> void:
 		_stick_touch = -1
 		stick = Vector2.ZERO
 		sprint_held = false
+		_stick_knob = _stick_base
 		_pad.queue_redraw()
 	if idx == _look_touch:
 		_look_touch = -1
 
 
+func _update_stick(pos: Vector2) -> void:
+	var delta := pos - _stick_base
+	if delta.length() > _stick_radius:
+		delta = delta.normalized() * _stick_radius
+	_stick_knob = _stick_base + delta
+	stick = Vector2(delta.x / _stick_radius, -delta.y / _stick_radius)
+	sprint_held = stick.length() > SPRINT_THRESHOLD
+	_pad.queue_redraw()
+
+
 func _drag(idx: int, pos: Vector2, rel: Vector2) -> void:
 	if idx == _stick_touch:
-		var delta := pos - _stick_origin
-		if delta.length() > STICK_RADIUS:
-			delta = delta.normalized() * STICK_RADIUS
-		_stick_knob = _stick_origin + delta
-		# Screen-Y grows downward — invert so pushing up = forward.
-		stick = Vector2(delta.x / STICK_RADIUS, -delta.y / STICK_RADIUS)
-		sprint_held = stick.length() > SPRINT_THRESHOLD
-		_pad.queue_redraw()
+		_update_stick(pos)
 	elif idx == _look_touch:
 		look_rel += rel * LOOK_SENS
 
 
-# ---------------- Drawing --------------------------------------------------
 func _draw_overlay(pad: Control) -> void:
-	# Movement joystick — only drawn while a finger is on it.
+	# Permanent joystick base makes its position obvious before touching.
+	pad.draw_circle(_stick_base, _stick_radius, Color(1, 1, 1, 0.12))
+	pad.draw_arc(_stick_base, _stick_radius, 0.0, TAU, 48,
+		Color(1, 1, 1, 0.42), 2.5)
 	if _stick_touch >= 0:
-		pad.draw_circle(_stick_origin, STICK_RADIUS, Color(1, 1, 1, 0.10))
-		pad.draw_arc(_stick_origin, STICK_RADIUS, 0.0, TAU, 48,
-			Color(1, 1, 1, 0.35), 2.0)
-		pad.draw_circle(_stick_knob, 36.0, Color(0.5, 0.95, 0.8, 0.85))
-	# Action buttons.
-	_draw_button(pad, _btn_fire, FIRE_RADIUS, "FIRE",
-		Color(0.95, 0.3, 0.25), fire_held)
-	_draw_button(pad, _btn_e, BUTTON_RADIUS, "E",
-		Color(0.4, 0.85, 0.6), false)
-	_draw_button(pad, _btn_f, BUTTON_RADIUS, "F",
-		Color(0.95, 0.8, 0.35), false)
-	_draw_button(pad, _btn_v, BUTTON_RADIUS, "V",
-		Color(0.45, 0.8, 0.95), false)
+		pad.draw_circle(_stick_knob, _stick_radius * 0.34,
+			Color(0.35, 0.9, 0.75, 0.88))
+	else:
+		pad.draw_circle(_stick_base, _stick_radius * 0.34,
+			Color(0.35, 0.9, 0.75, 0.32))
+
+	_draw_button(pad, _btn_fire, _fire_radius, "FIRE",
+		Color(0.95, 0.25, 0.20), fire_held)
+	_draw_button(pad, _btn_e, _button_radius, "USE",
+		Color(0.25, 0.78, 0.48), false)
+	_draw_button(pad, _btn_f, _button_radius, "SUIT",
+		Color(0.95, 0.72, 0.22), false)
+	_draw_button(pad, _btn_v, _button_radius, "CALL",
+		Color(0.25, 0.62, 0.95), false)
 
 
-func _draw_button(pad: Control, c: Vector2, r: float, label: String,
-		col: Color, pressed: bool) -> void:
-	var fill := Color(col.r, col.g, col.b, 0.85 if pressed else 0.55)
-	pad.draw_circle(c, r, fill)
-	pad.draw_arc(c, r, 0.0, TAU, 48, Color(1, 1, 1, 0.7), 2.0)
+func _draw_button(pad: Control, center: Vector2, radius: float,
+		label: String, col: Color, pressed: bool) -> void:
+	var fill := Color(col.r, col.g, col.b, 0.88 if pressed else 0.58)
+	pad.draw_circle(center, radius, fill)
+	pad.draw_arc(center, radius, 0.0, TAU, 48,
+		Color(1, 1, 1, 0.82), 2.0)
 	var font := ThemeDB.fallback_font
-	var fs := 26
-	var size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_CENTER, -1.0, fs)
-	pad.draw_string(font, c - size * 0.5 + Vector2(0, fs * 0.35), label,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, fs, Color(1, 1, 1, 0.95))
+	var font_size := 22 if radius >= 52.0 else 18
+	var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_CENTER,
+		-1.0, font_size)
+	pad.draw_string(font,
+		center - text_size * 0.5 + Vector2(0, font_size * 0.35),
+		label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size,
+		Color(1, 1, 1, 0.98))
