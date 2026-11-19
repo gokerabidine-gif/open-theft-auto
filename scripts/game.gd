@@ -488,6 +488,7 @@ func _on_start() -> void:
 	_player_prog = 0.0
 	_owned_spawn = null
 	_clear_celebration()
+	_clear_all_ai_people()
 	_pending_milestones.clear()
 	_milestone_check_t = 0.0
 	_fame_cd = 0.0
@@ -503,9 +504,7 @@ func _on_start() -> void:
 	_spawn_vehicles(54)
 	_spawn_airport_aircraft()
 	_spawn_boats()
-	for i in 54:
-		_spawn_npc()
-	_spawn_vip_groups(VIP_TARGET)
+	# AI pedestrians, police, VIPs and guards are disabled in this build.
 	_spawn_iron_suit()
 	_spawn_racers()
 	_spawn_rocket()
@@ -841,6 +840,10 @@ func _on_touch_action(name: StringName) -> void:
 		&"interact": _handle_action("interact")
 		&"suit":     _handle_action("enter_exit")
 		&"summon":   _handle_action("summon_suit")
+		&"melee":    _handle_action("melee")
+		&"weapon_next": _handle_action("weapon_next")
+		&"weapon_prev": _handle_action("weapon_prev")
+		&"phone": _handle_action("phone")
 
 
 # Movement / fire input shims — combine keyboard (via InputConfig's rebindable
@@ -878,7 +881,7 @@ func _fire_held() -> bool:
 # Hold to aim down sights on foot (also zooms the suit). L2 mirrors the
 # rebindable keyboard key so the trigger feels like the aim button.
 func _aim_held() -> bool:
-	return _action_held("aim") or Gamepad.trigger_left() > 0.4
+	return _action_held("aim") or (touch_hud != null and touch_hud.aim_touch_held) or Gamepad.trigger_left() > 0.4
 
 
 # Vehicle handbrake — Space, or Square (X) held while driving. The pad side is
@@ -915,7 +918,7 @@ func _updown() -> float:
 # shares the physical button with weapon_prev, mutually exclusive by context:
 # L1 only fires missiles while suited, and weapon switching is disabled then).
 func _altfire_held() -> bool:
-	return _action_held("alt_fire") or Gamepad.pressed(JOY_BUTTON_LEFT_SHOULDER)
+	return _action_held("alt_fire") or (touch_hud != null and touch_hud.alt_fire_touch_held) or Gamepad.pressed(JOY_BUTTON_LEFT_SHOULDER)
 
 
 # ---------------- Kiosk terminals ----------------
@@ -3182,9 +3185,33 @@ func _ang_diff(a: float, b: float) -> float:
 
 
 # =====================================================================
-# NPCs
+# NPCs — disabled: this version has no AI-controlled pedestrians.
 # =====================================================================
+## Remove every AI-controlled human character. The game remains a solo
+## open-world sandbox with vehicles, aircraft, boats and race traffic.
+func _clear_all_ai_people() -> void:
+	for group in [npcs, cops, vips, guards, my_guards, celebrants]:
+		for actor in group:
+			if actor is Dictionary and actor.has("node"):
+				var node = actor.node
+				if is_instance_valid(node):
+					node.queue_free()
+		group.clear()
+	_clear_police_extras()
+	for vehicle in vehicles.duplicate():
+		if vehicle.get("motorcade", false):
+			if is_instance_valid(vehicle.node):
+				vehicle.node.queue_free()
+			vehicles.erase(vehicle)
+	president = null
+	pres_state = "home"
+	pres_timer = 999999.0
+	pres_aggro = false
+	GameState.wanted = 0.0
+
+
 func _spawn_npc() -> void:
+	return
 	for tries in 20:
 		var x := (randf() - 0.5) * CityWorld.WORLD * 0.9
 		var z := (randf() - 0.5) * CityWorld.WORLD * 0.85
@@ -3204,6 +3231,7 @@ func _spawn_npc() -> void:
 
 
 func _update_npcs(dt: float) -> void:
+	return
 	for n in npcs:
 		if n.hp <= 0.0:
 			continue
@@ -3267,6 +3295,7 @@ func _update_npcs(dt: float) -> void:
 # Police & wanted
 # =====================================================================
 func _spawn_cop(near: Vector3, swat := false) -> void:
+	return
 	for tries in 20:
 		var ang := randf() * TAU
 		var dist := (16.0 if swat else 60.0) + randf() * 36.0
@@ -3292,6 +3321,7 @@ func _spawn_cop(near: Vector3, swat := false) -> void:
 
 
 func _update_cops(dt: float) -> void:
+	return
 	var target: Vector3 = in_car.pos if in_car != null else player_pos
 	for c in cops:
 		if c.hp <= 0.0:
@@ -3335,6 +3365,14 @@ func _update_cops(dt: float) -> void:
 
 
 func _update_wanted(dt: float) -> void:
+	# Police AI and wanted-response spawns are disabled with all NPCs.
+	GameState.wanted = 0.0
+	if not cops.is_empty():
+		for c in cops:
+			if is_instance_valid(c.node): c.node.queue_free()
+		cops.clear()
+	_clear_police_extras()
+	return
 	# Once the city is owned the police permanently stand down.
 	if city_owned:
 		GameState.wanted = 0.0
@@ -3570,6 +3608,7 @@ const RIVAL_TURFS := [
 ## (clears previous rival entries first) and called AFTER the save loads, so
 ## assassinated tycoons stay dead.
 func _spawn_forbes_rivals() -> void:
+	return
 	for v in vips:
 		if v.has("rival"):
 			for g in v.guards:
@@ -3629,6 +3668,7 @@ func _spawn_forbes_rivals() -> void:
 
 
 func _spawn_vip_groups(n: int) -> void:
+	return
 	for i in n:
 		var spot := _find_open_spot()
 		# The Indian-man-in-suit model reads as a VIP on its own — no tinting.
@@ -3670,6 +3710,7 @@ func _spawn_vip_groups(n: int) -> void:
 
 
 func _update_vips(dt: float) -> void:
+	return
 	var keep: Array = []
 	for v in vips:
 		if v.hp <= 0.0:
@@ -3765,6 +3806,7 @@ func _update_vips(dt: float) -> void:
 
 
 func _update_guards(dt: float) -> void:
+	return
 	var target: Vector3 = in_car.pos if in_car != null else player_pos
 	var keep: Array = []
 	for g in guards:
@@ -3885,6 +3927,7 @@ func _update_pending_milestones() -> void:
 ## player moving while they approach), stop a couple of metres out facing the
 ## player, cheer in place for a while, then wander off and despawn.
 func _spawn_celebration(n: int) -> void:
+	return
 	for i in n:
 		var ang := randf() * TAU
 		var dist := CELEBRATION_SPAWN_DIST + randf() * 4.0
@@ -3908,6 +3951,7 @@ func _spawn_celebration(n: int) -> void:
 ## touch the npcs/cops/guards/vips pools, so combat, wanted heat and the
 ## vehicle run-over/bullet/explosion checks never see them.
 func _update_celebrations(dt: float) -> void:
+	return
 	if celebrants.is_empty():
 		return
 	var keep: Array = []
@@ -5392,6 +5436,7 @@ func _make_motorcade_vehicle(pos: Vector3, yaw: float, is_limo: bool) -> Diction
 
 ## Spawn the President, his bodyguards and the convoy at the residence.
 func _begin_motorcade() -> void:
+	return
 	pres_aggro = false
 	convoy_prog = 0.0
 	var start := _sample_route(0.0)
@@ -5426,6 +5471,7 @@ func _begin_motorcade() -> void:
 
 
 func _update_president(dt: float) -> void:
+	return
 	if pres_state == "home":
 		# Once the city is owned there is no President left to assassinate —
 		# don't roll out a fresh motorcade with a dead-end objective.
@@ -5594,6 +5640,7 @@ func _win_city() -> void:
 ## As the new President, the player gets a personal detail: bodyguards on foot
 ## and a motorcade of escort cars that forms up around the car they drive.
 func _form_presidential_detail() -> void:
+	return
 	for gi in 4:
 		var gnode := Human.build_model("guard_suit")
 		add_child(gnode)
