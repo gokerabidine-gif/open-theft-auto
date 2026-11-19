@@ -4100,6 +4100,7 @@ func _update_pickups(dt: float) -> void:
 # ---------------- AI race cars ----------------
 ## Spawn the field of AI racers that loop the F1 circuit on the racing line.
 func _spawn_racers() -> void:
+	return
 	for r in racers:
 		r.node.queue_free()
 	racers.clear()
@@ -4121,6 +4122,7 @@ func _spawn_racers() -> void:
 
 ## Rail-follow the AI racers along the baked centreline and rank the player.
 func _update_racers(dt: float) -> void:
+	return
 	var t: Track = world.track
 	if t == null or racers.is_empty():
 		return
