@@ -390,59 +390,182 @@ func _build_boot() -> void:
 	_boot = Control.new()
 	_boot.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_boot)
+
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color("0c0d0f")
+	bg.color = Color("080d13")
 	_boot.add_child(bg)
+
+	# Cinematic dark overlay and a restrained gold/steel login card.
+	var tint := ColorRect.new()
+	tint.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tint.color = Color(0.015, 0.025, 0.04, 0.42)
+	_boot.add_child(tint)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_boot.add_child(center)
-	var vb := VBoxContainer.new()
-	vb.alignment = BoxContainer.ALIGNMENT_CENTER
-	vb.add_theme_constant_override("separation", 16)
-	center.add_child(vb)
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(520, 0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.05, 0.07, 0.96)
+	style.border_color = Color("b59a5a")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.content_margin_left = 34
+	style.content_margin_right = 34
+	style.content_margin_top = 30
+	style.content_margin_bottom = 28
+	card.add_theme_stylebox_override("panel", style)
+	center.add_child(card)
 
-	var title := _label("GTA VI", 124, TEXT)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(title)
-	var tag := _label("FREE HARBOR   ·   3D   ·   2026", 20, ACCENT)
-	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(tag)
+	var layout := VBoxContainer.new()
+	layout.alignment = BoxContainer.ALIGNMENT_CENTER
+	layout.add_theme_constant_override("separation", 14)
+	card.add_child(layout)
 
-	# Continue an existing save, or start fresh. With no save there's just one
-	# button (a fresh start).
-	if SaveGame.has_save():
-		var cont := _accent_button("CONTINUE")
-		cont.pressed.connect(func(): start_pressed.emit())
-		var cw := CenterContainer.new()
-		cw.add_child(cont)
-		vb.add_child(cw)
-		var ng := _accent_button("NEW GAME")
-		ng.pressed.connect(func(): new_game_pressed.emit())
-		var nw := CenterContainer.new()
-		nw.add_child(ng)
-		vb.add_child(nw)
-	else:
-		var btn := _accent_button("PRESS START")
-		btn.pressed.connect(func(): start_pressed.emit())
-		var btn_wrap := CenterContainer.new()
-		btn_wrap.add_child(btn)
-		vb.add_child(btn_wrap)
-	# Give the boot buttons gamepad/keyboard focus — without it a controller
-	# player with a save could never pick NEW GAME (mouse-only button).
-	UiNav.apply.call_deferred(vb)
+	var brand := _label("ABIDINE", 62, Color("f0eee8"))
+	brand.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(brand)
+	var subtitle := _label("OPEN WORLD  •  ROLEPLAY  •  ONLINE EXPERIENCE", 13, Color("b59a5a"))
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(subtitle)
 
-	var controls := _label(
-		"WASD move / drive    Mouse look    L-Click shoot    F enter/exit vehicle\n"
-		+ "Q / Tab / Z weapons    1-9 pick    scroll cycle    SHIFT sprint / boost\n"
-		+ "SPACE handbrake    E downtown kiosks    G enter Grand Prix (in an F1 car)    M mute    R respawn / heal\n"
-		+ "ESC pause menu — resume, rebind controls, or exit\n"
-		+ "GAMEPAD  L stick move/steer   R stick look   R2/L2 accel/brake   L2 aim · R2 fire   "
-		+ "paddle L sprint · paddle R melee   ✕ confirm   ○ back   Options pause",
-		15, Color(0.55, 0.57, 0.6))
-	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(controls)
+	var divider := ColorRect.new()
+	divider.color = Color(0.7, 0.61, 0.38, 0.7)
+	divider.custom_minimum_size = Vector2(0, 1)
+	layout.add_child(divider)
+
+	var welcome := _label("مرحباً بك في عالم ABIDINE", 23, TEXT)
+	welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(welcome)
+	var hint := _label("سجّل الدخول لحفظ تقدمك أو ادخل مباشرة كزائر", 15, FAINT)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(hint)
+
+	var create_btn := _accent_button("إنشاء حساب جديد")
+	create_btn.custom_minimum_size = Vector2(0, 56)
+	create_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	create_btn.pressed.connect(func(): _show_auth_form(layout, true))
+	layout.add_child(create_btn)
+
+	var login_btn := _accent_button("تسجيل الدخول")
+	login_btn.custom_minimum_size = Vector2(0, 52)
+	login_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	login_btn.pressed.connect(func(): _show_auth_form(layout, false))
+	layout.add_child(login_btn)
+
+	var guest_btn := Button.new()
+	guest_btn.text = "اللعب كزائر"
+	guest_btn.custom_minimum_size = Vector2(0, 54)
+	guest_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guest_btn.add_theme_font_size_override("font_size", 21)
+	var guest_style := StyleBoxFlat.new()
+	guest_style.bg_color = Color(0.10, 0.15, 0.19, 1.0)
+	guest_style.border_color = Color("718697")
+	guest_style.set_border_width_all(1)
+	guest_style.set_corner_radius_all(5)
+	guest_btn.add_theme_stylebox_override("normal", guest_style)
+	guest_btn.add_theme_stylebox_override("hover", guest_style.duplicate())
+	guest_btn.add_theme_color_override("font_color", TEXT)
+	guest_btn.pressed.connect(func(): start_pressed.emit())
+	layout.add_child(guest_btn)
+
+	var foot := _label("نسخة تجريبية — اللعب كزائر متاح دون اتصال", 12, FAINT)
+	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(foot)
+	UiNav.apply.call_deferred(layout)
+
+
+func _show_auth_form(layout: VBoxContainer, create_account: bool) -> void:
+	# Replace only the contents below the ABIDINE header with the selected form.
+	for i in range(layout.get_child_count() - 1, 3, -1):
+		var child := layout.get_child(i)
+		layout.remove_child(child)
+		child.queue_free()
+
+	var heading := _label("إنشاء حساب جديد" if create_account else "تسجيل الدخول", 22, TEXT)
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(heading)
+
+	var name_field: LineEdit
+	if create_account:
+		name_field = LineEdit.new()
+		name_field.placeholder_text = "اسم اللاعب"
+		name_field.custom_minimum_size = Vector2(0, 48)
+		name_field.add_theme_font_size_override("font_size", 17)
+		layout.add_child(name_field)
+
+	var email_field := LineEdit.new()
+	email_field.placeholder_text = "البريد الإلكتروني"
+	email_field.custom_minimum_size = Vector2(0, 48)
+	email_field.add_theme_font_size_override("font_size", 17)
+	email_field.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+	layout.add_child(email_field)
+
+	var password_field := LineEdit.new()
+	password_field.placeholder_text = "كلمة المرور"
+	password_field.secret = true
+	password_field.custom_minimum_size = Vector2(0, 48)
+	password_field.add_theme_font_size_override("font_size", 17)
+	layout.add_child(password_field)
+
+	var message := _label("خدمة الحسابات تحتاج إلى خادم تسجيل آمن؛ لم يتم ربط خادم بعد.", 13, Color("d8b86a"))
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(message)
+
+	var submit := _accent_button("إنشاء الحساب" if create_account else "دخول")
+	submit.custom_minimum_size = Vector2(0, 52)
+	submit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	submit.pressed.connect(func():
+		if email_field.text.strip_edges().is_empty() or password_field.text.is_empty():
+			message.text = "أدخل البريد الإلكتروني وكلمة المرور أولاً."
+			message.add_theme_color_override("font_color", Color("e58b79"))
+		elif create_account and name_field.text.strip_edges().is_empty():
+			message.text = "اكتب اسم اللاعب أولاً."
+			message.add_theme_color_override("font_color", Color("e58b79"))
+		else:
+			message.text = "واجهة الحساب جاهزة، لكن يلزم ربط خادم مصادقة لإنشاء الحساب أو تسجيل الدخول بأمان."
+			message.add_theme_color_override("font_color", Color("d8b86a"))
+	)
+	layout.add_child(submit)
+
+	var back := Button.new()
+	back.text = "رجوع"
+	back.custom_minimum_size = Vector2(0, 42)
+	back.pressed.connect(func():
+		for i in range(layout.get_child_count() - 1, 3, -1):
+			var child := layout.get_child(i)
+			layout.remove_child(child)
+			child.queue_free()
+		_build_boot_choices(layout)
+	)
+	layout.add_child(back)
+	UiNav.apply.call_deferred(layout)
+
+
+func _build_boot_choices(layout: VBoxContainer) -> void:
+	var create_btn := _accent_button("إنشاء حساب جديد")
+	create_btn.custom_minimum_size = Vector2(0, 56)
+	create_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	create_btn.pressed.connect(func(): _show_auth_form(layout, true))
+	layout.add_child(create_btn)
+	var login_btn := _accent_button("تسجيل الدخول")
+	login_btn.custom_minimum_size = Vector2(0, 52)
+	login_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	login_btn.pressed.connect(func(): _show_auth_form(layout, false))
+	layout.add_child(login_btn)
+	var guest_btn := Button.new()
+	guest_btn.text = "اللعب كزائر"
+	guest_btn.custom_minimum_size = Vector2(0, 54)
+	guest_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guest_btn.add_theme_font_size_override("font_size", 21)
+	guest_btn.pressed.connect(func(): start_pressed.emit())
+	layout.add_child(guest_btn)
+	var foot := _label("نسخة تجريبية — اللعب كزائر متاح دون اتصال", 12, FAINT)
+	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(foot)
 
 # ---------------- In-game HUD ----------------
 func _build_hud() -> void:
